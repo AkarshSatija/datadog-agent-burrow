@@ -32,9 +32,6 @@ class BurrowCheck(AgentCheck):
         self.log.debug("Collecting Topic Offsets")
         self._topic_offsets(clusters, burrow_address, extra_tags)
 
-        self.log.debug("Collecting Consumer Group Offsets")
-        #self._consumer_groups_offsets(clusters, burrow_address, extra_tags)
-
         self.log.debug("Collecting Consumer Group lags")
         self._consumer_groups_lags(clusters, burrow_address, extra_tags)
 
@@ -60,13 +57,11 @@ class BurrowCheck(AgentCheck):
 
                 self.gauge("kafka.consumer.maxlag", status["maxlag"]["current_lag"], tags=consumer_tags)
                 self.gauge("kafka.consumer.totallag", status["totallag"], tags=consumer_tags)
-                self._submit_lag_status("kafka.consumer.lag_status", status["status"], tags=consumer_tags)
 		if status["status"] == "NOTFOUND":
                     continue
                 for partition in status.get("partitions", []):
                     partition_tags = consumer_tags + ["topic:%s" % partition["topic"], "partition:%s" % partition["partition"]]
                     self._submit_partition_lags(partition, partition_tags)
-                    self._submit_lag_status("kafka.consumer.partition_lag_status", partition["status"], tags=partition_tags)
                     if partition["end"] is not None:
                         self.gauge("kafka.consumer.offsets", max(partition["end"]["offset"], 0), tags=partition_tags)
 
@@ -129,25 +124,6 @@ class BurrowCheck(AgentCheck):
                 response = self._rest_request_to_json(burrow_address, topic_path)
                 tags = ["topic:%s" % topic, "cluster:%s" % cluster] + extra_tags
                 self._submit_offsets_from_json(offsets_type="topic", json=response, tags=tags)
-
-    def _consumer_groups_offsets(self, clusters, burrow_address, extra_tags):
-        """
-        Retrieve the offsets for all consumer groups in the clusters
-        """
-        for cluster in clusters:
-            consumers_path = "%s/%s/consumer" % (CLUSTER_ENDPOINT, cluster)
-            consumers_list = self._rest_request_to_json(burrow_address, consumers_path).get("consumers", [])
-            for consumer in consumers_list:
-                topics_path = "%s/%s/topic" % (consumers_path, consumer)
-                topics_list = self._rest_request_to_json(burrow_address, topics_path).get("topics", [])
-                for topic in topics_list:
-                    topic_path = "%s/%s" % (topics_path, topic)
-                    response = self._rest_request_to_json(burrow_address, topic_path)
-                    if not response:
-                        continue
-                    tags = ["topic:%s" % topic, "cluster:%s" % cluster,
-                            "consumer:%s" % consumer] + extra_tags
-                    self._submit_offsets_from_json(offsets_type="consumer", json=response, tags=tags)
 
     def _submit_offsets_from_json(self, offsets_type, json, tags):
         """
